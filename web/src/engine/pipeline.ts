@@ -63,7 +63,7 @@ function cleanJson(text: string): string {
 }
 
   const stage1Response = await withRetry(() => ai.models.generateContent({
-    model: 'gemini-3.1-flash-lite',
+    model: 'gemini-3.5-flash-lite',
     contents: stage1Prompt,
     config: { temperature: 0.1, responseMimeType: "application/json" }
   }));
@@ -112,7 +112,7 @@ Generate a raw JSON object with no markdown wrapping:
 }`;
 
   const stage3Response = await withRetry(() => ai.models.generateContent({
-    model: 'gemini-3.1-flash-lite',
+    model: 'gemini-3.5-flash-lite',
     contents: stage3Prompt,
     config: { temperature: 0.3, responseMimeType: "application/json" }
   }));
@@ -136,7 +136,7 @@ ${JSON.stringify(rawSynthesis)}
 Return the final refined JSON object matching the exact structure of the draft with any inaccuracies or fluff removed.`;
 
   const stage4Response = await withRetry(() => ai.models.generateContent({
-    model: 'gemini-3.1-flash-lite',
+    model: 'gemini-3.5-flash-lite',
     contents: stage4Prompt,
     config: { temperature: 0.2, responseMimeType: "application/json" }
   }));
