@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-darkBg: #09090b;
+  --color-darkCard: #18181b;
+  --color-diffRed: #7f1d1d;
+  --color-diffGreen: #14532d;
+  --color-diffRedText: #fca5a5;
+  --color-diffGreenText: #86efac;
+}
+
+:root {
+  --background: #09090b;
+  --foreground: #f4f4f5;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* Scrollbar Hiding for tabs */
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+/* Diff Animation Styles */
+.diff-line {
+    @apply flex gap-3 px-2 py-0.5 rounded opacity-0;
+    animation: fadeIn 0.3s forwards;
+}
+
+.diff-line.removed {
+    @apply bg-diffRed/20 text-diffRedText;
+    text-decoration: line-through;
+    text-decoration-color: rgba(252, 165, 165, 0.5);
+}
+
+.diff-line.added {
+    @apply bg-diffGreen/20 text-diffGreenText font-sans;
+}
+
+.diff-line-number {
+    @apply text-zinc-600 select-none w-6 text-right opacity-50;
+}
+
+.diff-sign {
+    @apply font-bold select-none w-3 text-center;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}

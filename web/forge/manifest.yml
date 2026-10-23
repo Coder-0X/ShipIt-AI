@@ -1,0 +1,43 @@
+app:
+  id: ari:cloud:ecosystem::app/shipit-ai-jira-enterprise
+  name: ShipIt AI - Change Intelligence & PM Automation
+
+modules:
+  jira:issuePanel:
+    - key: shipit-ai-issue-panel
+      title: ShipIt AI Intelligence
+      icon: https://raw.githubusercontent.com/atlassian/forge-ui/master/icon.png
+      resource: main-custom-ui
+      resolver:
+        function: resolver-fn
+
+  jira:projectSettingsPage:
+    - key: shipit-ai-project-settings
+      title: ShipIt AI Configuration
+      resource: settings-custom-ui
+      resolver:
+        function: resolver-fn
+
+  function:
+    - key: resolver-fn
+      handler: index.handler
+
+resources:
+  - key: main-custom-ui
+    path: static/issue-panel/build
+  - key: settings-custom-ui
+    path: static/settings/build
+
+permissions:
+  scopes:
+    - read:jira-work
+    - write:jira-work
+    - read:confluence-content
+    - write:confluence-content
+    - storage:app
+  external:
+    fetch:
+      backend:
+        - "https://generativelanguage.googleapis.com"
+        - "https://hooks.slack.com"
+        - "https://api.resend.com"

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+      body { font-family: 'Inter', sans-serif; padding: 16px; color: #333; background-color: #fafafa; }
+      h2 { font-size: 16px; color: #10b981; margin-top: 0; }
+      p { font-size: 13px; color: #666; line-height: 1.4; }
+      label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 8px; color: #444; }
+      input { width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #ddd; font-family: monospace; font-size: 12px; box-sizing: border-box; margin-bottom: 16px; }
+      button { width: 100%; background-color: #10b981; color: white; border: none; padding: 10px; border-radius: 4px; font-weight: 600; cursor: pointer; }
+      #status { margin-top: 16px; font-size: 12px; color: #059669; font-weight: bold; display: none; }
+    </style>
+  </head>
+  <body>
+    <h2>ShipIt AI Settings</h2>
+    <p>Paste your API key to connect this add-on to your account.</p>
+    
+    <label>API Key</label>
+    <input type="password" id="apiKey" placeholder="sk_live_..." />
+    
+    <button id="saveBtn" onclick="save()">Save Configuration</button>
+    <div id="status">Settings Saved!</div>
+    
+    <script>
+      // Load existing key
+      google.script.run.withSuccessHandler(function(key) {
+        if (key) document.getElementById('apiKey').value = key;
+      }).getApiKey();
+
+      function save() {
+        const btn = document.getElementById('saveBtn');
+        const status = document.getElementById('status');
+        const key = document.getElementById('apiKey').value.trim();
+        
+        btn.innerText = 'Saving...';
+        btn.disabled = true;
+        
+        google.script.run.withSuccessHandler(function() {
+          btn.innerText = 'Save Configuration';
+          btn.disabled = false;
+          status.style.display = 'block';
+          setTimeout(() => status.style.display = 'none', 3000);
+        }).saveApiKey(key);
+      }
+    </script>
+  </body>
+</html>

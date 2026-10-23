@@ -1,0 +1,70 @@
+/* Custom overrides on top of Tailwind */
+
+/* Scrollbar Hiding for tabs */
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+/* Tone Selector Buttons */
+.tone-btn {
+    @apply font-mono text-xs px-3 py-1.5 rounded-full border border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-500 transition-colors bg-darkBg whitespace-nowrap;
+}
+.tone-btn.active {
+    @apply border-emerald-500 text-emerald-400 bg-emerald-950/30 ring-1 ring-emerald-500/50;
+}
+
+/* Output Tabs */
+.output-tab {
+    @apply font-mono text-xs px-4 py-3 text-zinc-500 hover:text-white border-b-2 border-transparent transition-colors whitespace-nowrap;
+}
+.output-tab.active {
+    @apply text-emerald-400 border-emerald-400 bg-emerald-950/10;
+}
+
+/* Textarea Output Content */
+.output-content {
+    @apply w-full h-full min-h-[300px] bg-transparent resize-none font-sans text-[15px] leading-relaxed text-zinc-200 focus:outline-none p-2;
+}
+
+/* Diff Animation Styles */
+.diff-line {
+    @apply flex gap-3 px-2 py-0.5 rounded opacity-0;
+    animation: fadeIn 0.3s forwards;
+}
+
+.diff-line.removed {
+    @apply bg-diffRed/20 text-diffRedText;
+    text-decoration: line-through;
+    text-decoration-color: rgba(252, 165, 165, 0.5);
+}
+
+.diff-line.added {
+    @apply bg-diffGreen/20 text-diffGreenText font-sans; /* Added lines use sans to look like the final copy */
+}
+
+.diff-line-number {
+    @apply text-zinc-600 select-none w-6 text-right opacity-50;
+}
+
+.diff-sign {
+    @apply font-bold select-none w-3 text-center;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Typing cursor animation */
+.typing-cursor::after {
+    content: '|';
+    animation: blink 1s step-start infinite;
+}
+
+@keyframes blink {
+    50% { opacity: 0; }
+}

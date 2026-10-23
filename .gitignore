@@ -1,0 +1,34 @@
+﻿# Dependencies
+node_modules/
+**/node_modules/
+.pnp
+.pnp.js
+
+# Environment variables & secrets (CRITICAL: Never commit real keys)
+.env
+.env.*
+*.env
+!.env.example
+*.pem
+
+# Next.js & Build outputs
+.next/
+out/
+build/
+dist/
+coverage/
+.vercel
+
+# Logs & Debugging
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# System & IDE files
+.DS_Store
+Thumbs.db
+*.tsbuildinfo
+next-env.d.ts
+.idea/
+.vscode/
