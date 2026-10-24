@@ -6,16 +6,22 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { webhookUrl, blockKitPayload } = body;
     
-    if (!webhookUrl || !blockKitPayload) {
-      return NextResponse.json({ error: 'Missing webhookUrl or blockKitPayload' }, { status: 400 });
+    if (!blockKitPayload) {
+      return NextResponse.json({ error: 'Missing blockKitPayload in request body' }, { status: 400 });
     }
     
-    const success = await dispatchSlackNotification(webhookUrl, blockKitPayload);
+    const result = await dispatchSlackNotification(webhookUrl, blockKitPayload);
     
-    if (success) {
-      return NextResponse.json({ message: 'Dispatched to Slack successfully' }, { status: 200 });
+    if (result.success) {
+      return NextResponse.json({
+        message: result.message,
+        simulated: result.simulated
+      }, { status: 200 });
     } else {
-      return NextResponse.json({ error: 'Failed to dispatch to Slack' }, { status: 500 });
+      return NextResponse.json({
+        error: result.message,
+        details: result.error
+      }, { status: 502 });
     }
     
   } catch (error: any) {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { getAuditRecordByHash } from '@/lib/auditLedger';
 
 export async function POST(req: NextRequest) {
   try {
@@ -9,14 +9,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Valid hash string is required' }, { status: 400 });
     }
 
-    // Lookup the cryptographic hash in the immutable ledger
-    const { data: auditRecord, error } = await supabaseAdmin
-      .from('pull_request_audits')
-      .select('pr_id, pr_title, source_branch, author, risk_level, quality_score, created_at, full_synthesis_json')
-      .eq('tamper_proof_hash', hash)
-      .single();
+    const cleanHash = hash.trim();
 
-    if (error || !auditRecord) {
+    // Lookup the cryptographic hash in the immutable ledger (Supabase or local persistent ledger)
+    const auditRecord = await getAuditRecordByHash(cleanHash);
+
+    if (!auditRecord) {
       // Return a 404 if the hash is completely missing or fabricated
       return NextResponse.json({ 
         verified: false, 
@@ -37,9 +35,11 @@ export async function POST(req: NextRequest) {
         },
         riskMetrics: {
           riskLevel: auditRecord.risk_level,
-          qualityScore: auditRecord.quality_score
+          qualityScore: auditRecord.quality_score,
+          hasBreakingChanges: auditRecord.has_breaking_changes
         },
-        auditJustification: auditRecord.full_synthesis_json?.complianceAuditLog?.justification
+        tamperProofHash: auditRecord.tamper_proof_hash,
+        auditJustification: auditRecord.full_synthesis_json?.complianceAuditLog?.justification || 'Enterprise change management verified'
       }
     }, { status: 200 });
     

@@ -1,16 +1,50 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DeepAnalysisResult } from '@/engine/types';
+
+interface AuditItem {
+  id: string;
+  pr_id: string;
+  pr_title: string;
+  source_branch: string;
+  author: string;
+  risk_level: string;
+  quality_score: number;
+  tamper_proof_hash: string;
+  created_at: string;
+}
 
 export default function EnterpriseJiraDemo() {
   const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<DeepAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activePersona, setActivePersona] = useState<'product' | 'tech' | 'exec' | 'compliance'>('product');
-  const [postedToJira, setPostedToJira] = useState(false);
-  const [publishedToConfluence, setPublishedToConfluence] = useState(false);
-  const [broadcastedToSlack, setBroadcastedToSlack] = useState(false);
+  
+  // Jira Actions
+  const [postingToJira, setPostingToJira] = useState(false);
+  const [jiraResult, setJiraResult] = useState<{ success: boolean; message: string; url?: string } | null>(null);
+
+  // Slack Actions
+  const [customSlackUrl, setCustomSlackUrl] = useState('');
+  const [broadcastingSlack, setBroadcastingSlack] = useState(false);
+  const [slackResult, setSlackResult] = useState<{ success: boolean; message: string; simulated?: boolean } | null>(null);
+
+  // Jira Release Hub State
+  const [releaseProjectKey, setReleaseProjectKey] = useState('PROJ');
+  const [releaseVersionName, setReleaseVersionName] = useState('v2.4.0');
+  const [releaseCustomNotes, setReleaseCustomNotes] = useState('Includes OAuth2 RFC 7009 revocation, FIDO2 WebAuthn passkeys, and multi-region Redis cluster failover.');
+  const [generatingReleaseHub, setGeneratingReleaseHub] = useState(false);
+  const [releaseHubResult, setReleaseHubResult] = useState<any | null>(null);
+
+  // Audit Ledger & Hash Verification State
+  const [recentAudits, setRecentAudits] = useState<AuditItem[]>([]);
+  const [verifyHashInput, setVerifyHashInput] = useState('');
+  const [verifyingHash, setVerifyingHash] = useState(false);
+  const [verificationResult, setVerificationResult] = useState<any | null>(null);
+
+  // Active view section
+  const [activeView, setActiveView] = useState<'pr-inspector' | 'release-hub' | 'audit-ledger'>('pr-inspector');
 
   // Sample real-world enterprise Pull Request payload linked to Jira
   const samplePR = {
@@ -52,9 +86,27 @@ export default function EnterpriseJiraDemo() {
 + }`
   };
 
+  const fetchRecentAudits = async () => {
+    try {
+      const res = await fetch('/api/enterprise/audits');
+      if (res.ok) {
+        const data = await res.json();
+        setRecentAudits(data.records || []);
+      }
+    } catch (e) {
+      console.warn('Failed fetching recent audits:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchRecentAudits();
+  }, []);
+
   const handleRunDeepAnalysis = async () => {
     setAnalyzing(true);
     setError(null);
+    setJiraResult(null);
+    setSlackResult(null);
     try {
       const res = await fetch('/api/enterprise/analyze-pr', {
         method: 'POST',
@@ -66,6 +118,7 @@ export default function EnterpriseJiraDemo() {
         throw new Error(data.error || data.details || 'Enterprise Analysis Failed');
       }
       setAnalysis(data);
+      fetchRecentAudits();
     } catch (err: any) {
       console.error('Enterprise Analysis Failed:', err);
       setError(err.message || 'Error running 4-Stage Deep Pipeline.');
@@ -74,22 +127,119 @@ export default function EnterpriseJiraDemo() {
     }
   };
 
-  const handleSlackDispatch = async () => {
+  const handlePostToJira = async () => {
     if (!analysis) return;
+    setPostingToJira(true);
+    setJiraResult(null);
     try {
-      // In a real app, you would prompt for or fetch the webhook URL from settings.
-      // We will send a mock one just to show the API flow.
-      await fetch('/api/enterprise/dispatch-slack', {
+      const res = await fetch('/api/enterprise/jira/post-comment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          webhookUrl: 'https://hooks.slack.com/services/MOCK/URL',
+          issueKey: analysis.pullRequest.jiraIssueKey || 'PROJ-1042',
+          commentMarkdown: analysis.multiChannelFormats.jiraCommentMarkdown
+        })
+      });
+      const data = await res.json();
+      setJiraResult({
+        success: res.ok,
+        message: data.message || 'Comment posted',
+        url: data.url
+      });
+    } catch (err: any) {
+      setJiraResult({
+        success: false,
+        message: err.message || 'Failed to communicate with Jira API'
+      });
+    } finally {
+      setPostingToJira(false);
+    }
+  };
+
+  const handleSlackDispatch = async () => {
+    if (!analysis) return;
+    setBroadcastingSlack(true);
+    setSlackResult(null);
+    try {
+      const res = await fetch('/api/enterprise/dispatch-slack', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          webhookUrl: customSlackUrl.trim() || undefined,
           blockKitPayload: analysis.multiChannelFormats.slackBlockKitJson
         })
       });
-      setBroadcastedToSlack(true);
-    } catch (err) {
-      console.error(err);
+      const data = await res.json();
+      setSlackResult({
+        success: res.ok,
+        message: data.message || 'Slack broadcast processed',
+        simulated: data.simulated
+      });
+    } catch (err: any) {
+      setSlackResult({
+        success: false,
+        message: err.message || 'Network error reaching Slack'
+      });
+    } finally {
+      setBroadcastingSlack(false);
+    }
+  };
+
+  const handleGenerateReleaseHub = async () => {
+    setGeneratingReleaseHub(true);
+    setReleaseHubResult(null);
+    try {
+      const res = await fetch('/api/enterprise/jira/release-hub', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectKey: releaseProjectKey,
+          versionName: releaseVersionName,
+          customNotes: releaseCustomNotes,
+          items: [
+            {
+              key: 'PROJ-1042',
+              title: 'Implement OAuth2 Session Revocation & Passkey Auth',
+              author: 'Alex Chen',
+              details: 'RFC 7009 revocation, FIDO2 biometric authentication'
+            },
+            {
+              key: 'PROJ-1043',
+              title: 'Multi-Region Redis Cluster Session Failover',
+              author: 'Sarah Lin',
+              details: 'Zero-downtime Redis failover with active-active replication'
+            }
+          ]
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed generating release hub pack');
+      setReleaseHubResult(data);
+      fetchRecentAudits();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setGeneratingReleaseHub(false);
+    }
+  };
+
+  const handleVerifyHash = async (hashToVerify?: string) => {
+    const target = hashToVerify || verifyHashInput;
+    if (!target) return;
+    setVerifyingHash(true);
+    setVerificationResult(null);
+    try {
+      const res = await fetch('/api/enterprise/verify-hash', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hash: target.trim() })
+      });
+      const data = await res.json();
+      setVerificationResult(data);
+    } catch (err: any) {
+      setVerificationResult({ verified: false, message: err.message });
+    } finally {
+      setVerifyingHash(false);
     }
   };
 
@@ -104,7 +254,6 @@ export default function EnterpriseJiraDemo() {
       const data = await res.json();
       
       if (res.ok && data.soc2Report) {
-        // Trigger file download
         const blob = new Blob([JSON.stringify(data.soc2Report, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -129,21 +278,21 @@ export default function EnterpriseJiraDemo() {
           <div>
             <div className="flex items-center gap-2">
               <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-xs font-mono px-2.5 py-1 rounded-full uppercase tracking-wider font-semibold">
-                Atlassian Forge Enterprise Suite
+                Enterprise Integration Engine
               </span>
-              <span className="text-xs font-mono text-zinc-500">v2.0.0-enterprise</span>
+              <span className="text-xs font-mono text-zinc-500">v2.4.0-orchestrated</span>
             </div>
             <h1 className="text-3xl font-bold tracking-tight text-white mt-2">
-              Jira Change Intelligence & "Virtual PM" Platform
+              ShipIt AI Release Orchestrator
             </h1>
             <p className="text-zinc-400 text-sm mt-1">
-              Automated Code Review, Plain-English Multi-Persona Translation, and SOC 2 Audit Traceability.
+              Live GitHub PR Ingestion, Atlassian Jira Release Hubs, Slack Block-Kit Broadcasts & Cryptographic Audit Ledger.
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <a href="/" className="text-xs font-mono text-zinc-400 hover:text-white transition-colors bg-zinc-900 border border-zinc-800 px-3 py-2 rounded-lg">
-              ← Back to Web App
+              ← Home
             </a>
             <a href="/dashboard" className="text-xs font-mono text-zinc-400 hover:text-white transition-colors bg-zinc-900 border border-zinc-800 px-3 py-2 rounded-lg">
               Dashboard
@@ -164,279 +313,566 @@ export default function EnterpriseJiraDemo() {
               ) : (
                 <>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                  <span>Simulate GitHub PR Ingestion</span>
+                  <span>Ingest & Analyze PR</span>
                 </>
               )}
             </button>
           </div>
         </div>
 
-        <div className="bg-blue-950/20 border border-blue-900/50 rounded-lg p-4 flex items-start gap-3">
-          <svg className="w-5 h-5 text-blue-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-          <div>
-            <h4 className="text-sm font-semibold text-blue-300">Live GitHub Ingestion Ready</h4>
-            <p className="text-xs text-blue-400/80 mt-1">Configure your GitHub repository webhook to point to: <code className="bg-blue-950 px-1.5 py-0.5 rounded text-blue-200">https://your-domain.com/api/webhooks/github</code> with your HMAC secret. The new AST boundary analyzer will automatically chunk diffs and strip lockfiles.</p>
-          </div>
+        {/* View Switcher Tabs */}
+        <div className="flex border-b border-zinc-800 gap-2">
+          <button
+            onClick={() => setActiveView('pr-inspector')}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeView === 'pr-inspector' ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5' : 'border-transparent text-zinc-400 hover:text-zinc-200'}`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
+            PR Intelligence & Jira Comment
+          </button>
+          <button
+            onClick={() => setActiveView('release-hub')}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeView === 'release-hub' ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5' : 'border-transparent text-zinc-400 hover:text-zinc-200'}`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+            Jira Release Hub Studio
+          </button>
+          <button
+            onClick={() => setActiveView('audit-ledger')}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeView === 'audit-ledger' ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5' : 'border-transparent text-zinc-400 hover:text-zinc-200'}`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+            Audit Ledger & Hash Verifier
+          </button>
         </div>
 
-        {/* Main Grid: Mock Jira Issue View + ShipIt AI Forge Panel */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          
-          {/* Left Column (8 Cols): Jira Issue Details */}
-          <div className="lg:col-span-7 space-y-6">
+        {/* ======================================================== */}
+        {/* VIEW 1: PR INSPECTOR & MULTI-CHANNEL SYNC */}
+        {/* ======================================================== */}
+        {activeView === 'pr-inspector' && (
+          <div className="space-y-6">
             
-            {/* Jira Issue Mock Card */}
-            <div className="border border-zinc-800 bg-[#121215] rounded-xl p-6 shadow-xl space-y-6">
-              
-              <div className="flex items-center justify-between border-b border-zinc-800/80 pb-4">
-                <div className="flex items-center gap-2">
-                  <span className="bg-blue-900/30 text-blue-400 border border-blue-800 font-mono text-xs px-2 py-0.5 rounded font-semibold">
-                    PROJ-1042
-                  </span>
-                  <span className="text-zinc-400 text-sm font-medium">/ Software Development Board</span>
+            {/* Live Webhook Info Banner */}
+            <div className="bg-blue-950/20 border border-blue-900/50 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <svg className="w-5 h-5 text-blue-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <div>
+                  <h4 className="text-sm font-semibold text-blue-300">Live GitHub Ingestion Endpoint Active</h4>
+                  <p className="text-xs text-blue-400/80 mt-1">
+                    Route: <code className="bg-blue-950 px-1.5 py-0.5 rounded text-blue-200 font-mono">POST /api/webhooks/github</code>. Automatically fetches raw diffs, parses Jira keys, validates conventional commits, and persists to the cryptographic ledger.
+                  </p>
                 </div>
-                <span className="bg-zinc-800 text-zinc-300 text-xs px-2.5 py-1 rounded font-mono">
-                  Status: IN CODE REVIEW
-                </span>
+              </div>
+              <div className="text-xs font-mono text-zinc-400 bg-zinc-900 px-3 py-1.5 rounded border border-zinc-800 shrink-0">
+                Target Issue: <span className="text-emerald-400 font-bold">{samplePR.jiraIssueKey}</span>
+              </div>
+            </div>
+
+            {error && (
+              <div className="p-4 bg-red-950/30 border border-red-900 rounded-lg text-red-300 text-sm">
+                {error}
+              </div>
+            )}
+
+            {/* Grid Layout: PR Metadata on Left, AI Forge Panel on Right */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              
+              {/* Left Column (7 Cols): Mock Jira Card + Diff preview */}
+              <div className="lg:col-span-7 space-y-6">
+                <div className="border border-zinc-800 bg-[#121215] rounded-xl p-6 shadow-xl space-y-5">
+                  <div className="flex items-center justify-between border-b border-zinc-800/80 pb-4">
+                    <div className="flex items-center gap-2">
+                      <span className="bg-blue-900/30 text-blue-400 border border-blue-800 font-mono text-xs px-2.5 py-1 rounded font-semibold">
+                        {samplePR.jiraIssueKey}
+                      </span>
+                      <span className="text-zinc-400 text-sm font-medium">/ Auth Platform Board</span>
+                    </div>
+                    <span className="bg-zinc-800 text-zinc-300 text-xs px-2.5 py-1 rounded font-mono">
+                      Status: IN CODE REVIEW
+                    </span>
+                  </div>
+
+                  <div>
+                    <h2 className="text-xl font-bold text-white">{samplePR.title}</h2>
+                    <p className="text-sm text-zinc-400 mt-1">{samplePR.description}</p>
+                  </div>
+
+                  {/* Commits List */}
+                  <div className="space-y-2 pt-2">
+                    <span className="text-xs font-mono text-zinc-500 uppercase tracking-wider">Included Commits (3)</span>
+                    <div className="space-y-1.5">
+                      {samplePR.commits.map(c => (
+                        <div key={c.hash} className="text-xs font-mono bg-zinc-900 border border-zinc-800/80 rounded p-2 flex items-center justify-between">
+                          <span className="text-zinc-300 truncate">{c.message}</span>
+                          <span className="text-zinc-600 shrink-0 ml-2">{c.hash.slice(0, 7)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Code Diff Preview */}
+                  <div className="space-y-1.5 pt-2">
+                    <span className="text-xs font-mono text-zinc-500 uppercase tracking-wider">Sanitized Diff Snapshot</span>
+                    <pre className="text-xs font-mono bg-zinc-950 p-3 rounded-lg border border-zinc-800 text-emerald-400/90 overflow-x-auto">
+                      {samplePR.rawDiff}
+                    </pre>
+                  </div>
+                </div>
+
+                {/* Slack Dispatch Settings Box */}
+                <div className="border border-zinc-800 bg-[#121215] rounded-xl p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">💬</span>
+                      <h3 className="text-sm font-bold text-zinc-200">Slack Block-Kit Automated Broadcast</h3>
+                    </div>
+                    <span className="text-xs text-zinc-500 font-mono">Interactive Webhook</span>
+                  </div>
+                  
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="text"
+                      placeholder="Custom Slack Incoming Webhook URL (or leave blank to use server .env)"
+                      value={customSlackUrl}
+                      onChange={(e) => setCustomSlackUrl(e.target.value)}
+                      className="bg-zinc-900 border border-zinc-800 text-xs text-zinc-200 px-3 py-2 rounded-lg flex-1 font-mono focus:border-emerald-500 focus:outline-none"
+                    />
+                    <button
+                      onClick={handleSlackDispatch}
+                      disabled={!analysis || broadcastingSlack}
+                      className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold text-xs px-4 py-2 rounded-lg transition-colors whitespace-nowrap"
+                    >
+                      {broadcastingSlack ? 'Broadcasting...' : 'Broadcast to Slack'}
+                    </button>
+                  </div>
+
+                  {slackResult && (
+                    <div className={`p-3 rounded-lg text-xs font-mono border ${slackResult.success ? 'bg-emerald-950/30 border-emerald-800 text-emerald-300' : 'bg-red-950/30 border-red-800 text-red-300'}`}>
+                      {slackResult.message}
+                    </div>
+                  )}
+                </div>
               </div>
 
+              {/* Right Column (5 Cols): AI Synthesis & Multi-Persona Output */}
+              <div className="lg:col-span-5 space-y-6">
+                <div className="border border-zinc-800 bg-[#121215] rounded-xl p-6 shadow-xl space-y-6">
+                  
+                  <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                    <span className="text-xs font-mono uppercase text-emerald-400 font-semibold flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                      ShipIt AI Intelligence
+                    </span>
+                    {analysis && (
+                      <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[11px] font-mono px-2 py-0.5 rounded">
+                        Score: {analysis.qualityScore.overallScore}/100
+                      </span>
+                    )}
+                  </div>
+
+                  {!analysis && !analyzing && (
+                    <div className="text-center py-16 text-zinc-500 text-sm space-y-3">
+                      <svg className="w-10 h-10 mx-auto text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                      <p>Click <strong>"Ingest & Analyze PR"</strong> to trigger the 4-stage Gemini reasoning engine.</p>
+                    </div>
+                  )}
+
+                  {analyzing && (
+                    <div className="text-center py-16 space-y-3">
+                      <div className="animate-spin w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full mx-auto"></div>
+                      <p className="text-xs font-mono text-zinc-400">Classifying AST diffs & synthesizing 4 personas...</p>
+                    </div>
+                  )}
+
+                  {analysis && (
+                    <div className="space-y-5 text-sm">
+                      
+                      {/* Risk & Health Metrics */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-zinc-900 border border-zinc-800 p-3 rounded-lg">
+                          <span className="text-[10px] font-mono text-zinc-500 uppercase">Blast Radius Risk</span>
+                          <div className={`text-base font-bold mt-1 ${analysis.riskAssessment.riskLevel === 'CRITICAL' ? 'text-red-400' : analysis.riskAssessment.riskLevel === 'HIGH' ? 'text-orange-400' : 'text-emerald-400'}`}>
+                            {analysis.riskAssessment.riskLevel}
+                          </div>
+                          <span className="text-[10px] font-mono text-zinc-500">{analysis.riskAssessment.blastRadius}</span>
+                        </div>
+
+                        <div className="bg-zinc-900 border border-zinc-800 p-3 rounded-lg">
+                          <span className="text-[10px] font-mono text-zinc-500 uppercase">Breaking Changes</span>
+                          <div className={`text-base font-bold mt-1 ${analysis.riskAssessment.hasBreakingChanges ? 'text-amber-400' : 'text-emerald-400'}`}>
+                            {analysis.riskAssessment.hasBreakingChanges ? 'YES' : 'NONE'}
+                          </div>
+                          <span className="text-[10px] font-mono text-zinc-500">Gate: {analysis.qualityScore.gatePassed ? 'PASSED' : 'HOLD'}</span>
+                        </div>
+                      </div>
+
+                      {/* Multi-Persona Tabs */}
+                      <div className="border border-zinc-800 rounded-lg p-1 bg-zinc-900 flex text-xs">
+                        {(['product', 'tech', 'exec', 'compliance'] as const).map(tab => (
+                          <button
+                            key={tab}
+                            onClick={() => setActivePersona(tab)}
+                            className={`flex-1 py-1.5 rounded capitalize font-medium transition-all ${activePersona === tab ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-white'}`}
+                          >
+                            {tab}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Persona Output Display */}
+                      <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-lg p-4 text-xs space-y-3">
+                        {activePersona === 'product' && (
+                          <div className="space-y-2">
+                            <h4 className="font-bold text-white text-sm">{analysis.synthesis.productSummary.headline}</h4>
+                            <p className="text-zinc-300 leading-relaxed">{analysis.synthesis.productSummary.customerValueNarrative}</p>
+                            <div className="pt-2">
+                              <span className="text-[11px] font-mono text-zinc-500 uppercase">Key User Benefits:</span>
+                              <ul className="list-disc list-inside text-zinc-400 mt-1 space-y-1">
+                                {analysis.synthesis.productSummary.keyBenefits.map((b, i) => (
+                                  <li key={i}>{b}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                        )}
+
+                        {activePersona === 'tech' && (
+                          <div className="space-y-2">
+                            <div className="font-bold text-zinc-200">Architectural Note:</div>
+                            <p className="text-zinc-400 leading-relaxed">{analysis.synthesis.technicalSummary.architecturalImpact}</p>
+                            <div className="pt-2 font-mono text-[11px]">
+                              <span className="text-zinc-500 uppercase">Modified Components:</span>
+                              <div className="flex flex-wrap gap-1.5 mt-1">
+                                {analysis.synthesis.technicalSummary.changedComponents.map((c, i) => (
+                                  <span key={i} className="bg-zinc-800 text-emerald-300 px-2 py-0.5 rounded border border-zinc-700">{c}</span>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {activePersona === 'exec' && (
+                          <div className="space-y-2">
+                            <div className="font-bold text-zinc-200">Executive Briefing:</div>
+                            <p className="text-zinc-300 italic text-sm">"{analysis.synthesis.executiveBrief.oneLiner}"</p>
+                            <div className="pt-2">
+                              <span className="text-zinc-500 font-mono text-[11px] uppercase">Business Objective:</span>
+                              <p className="text-emerald-400 font-medium mt-0.5">{analysis.synthesis.executiveBrief.businessObjective}</p>
+                            </div>
+                          </div>
+                        )}
+
+                        {activePersona === 'compliance' && (
+                          <div className="space-y-2 font-mono text-[11px]">
+                            <div className="flex justify-between border-b border-zinc-800 pb-1">
+                              <span className="text-zinc-500">Change Type:</span>
+                              <span className="text-emerald-400 font-bold">{analysis.synthesis.complianceAuditLog.changeType}</span>
+                            </div>
+                            <div className="space-y-1 pt-1">
+                              <span className="text-zinc-500">Audit Justification:</span>
+                              <p className="text-zinc-300 font-sans text-xs">{analysis.synthesis.complianceAuditLog.justification}</p>
+                            </div>
+                            <div className="space-y-1 pt-2">
+                              <span className="text-zinc-500">Tamper-Proof SHA-256 Hash:</span>
+                              <div className="bg-zinc-950 p-2 rounded border border-zinc-800 text-[10px] text-emerald-400 break-all select-all font-mono">
+                                {analysis.synthesis.complianceAuditLog.tamperProofHash}
+                              </div>
+                            </div>
+                            <div className="pt-2">
+                              <button onClick={handleDownloadSOC2} className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold py-2 rounded border border-zinc-700 text-xs transition-colors">
+                                Download SOC 2 Traceability JSON
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 1-Click Outbound Actions */}
+                      <div className="space-y-3 pt-2 border-t border-zinc-800">
+                        <span className="font-mono text-[11px] text-zinc-500 uppercase">Outbound Multi-Surface Sync</span>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            onClick={handlePostToJira}
+                            disabled={postingToJira}
+                            className="py-2.5 px-3 rounded text-xs font-semibold border border-blue-800 bg-blue-950/40 hover:bg-blue-900/50 text-blue-300 transition-all flex items-center justify-center gap-1.5"
+                          >
+                            {postingToJira ? 'Posting...' : `Sync to Jira (${analysis.pullRequest.jiraIssueKey || 'Issue'})`}
+                          </button>
+
+                          <button
+                            onClick={handleSlackDispatch}
+                            disabled={broadcastingSlack}
+                            className="py-2.5 px-3 rounded text-xs font-semibold border border-emerald-800 bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-300 transition-all flex items-center justify-center gap-1.5"
+                          >
+                            {broadcastingSlack ? 'Broadcasting...' : 'Broadcast to #slack'}
+                          </button>
+                        </div>
+
+                        {jiraResult && (
+                          <div className={`p-3 rounded-lg text-xs font-mono border ${jiraResult.success ? 'bg-blue-950/30 border-blue-800 text-blue-300' : 'bg-red-950/30 border-red-800 text-red-300'}`}>
+                            {jiraResult.message}
+                            {jiraResult.url && (
+                              <div className="mt-1">
+                                <a href={jiraResult.url} target="_blank" rel="noreferrer" className="underline hover:text-white">
+                                  View in Jira →
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                    </div>
+                  )}
+
+                </div>
+              </div>
+
+            </div>
+          </div>
+        )}
+
+        {/* ======================================================== */}
+        {/* VIEW 2: JIRA RELEASE HUB STUDIO */}
+        {/* ======================================================== */}
+        {activeView === 'release-hub' && (
+          <div className="space-y-6">
+            <div className="border border-zinc-800 bg-[#121215] rounded-xl p-6 shadow-xl space-y-6">
               <div>
-                <h2 className="text-xl font-bold text-white">
-                  {samplePR.title}
-                </h2>
-                <p className="text-zinc-400 text-sm mt-2 leading-relaxed">
-                  {samplePR.description}
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <span className="text-blue-400">🔷</span>
+                  Jira Release Hub Version Pack Orchestration
+                </h3>
+                <p className="text-sm text-zinc-400 mt-1">
+                  Aggregates multiple completed tickets and PRs into an executive-ready Release Hub version note package and syncs directly to Atlassian Jira Cloud.
                 </p>
               </div>
 
-              {/* Linked GitHub Commits Sub-section */}
-              <div className="space-y-3 bg-darkBg/60 border border-zinc-800/80 rounded-lg p-4 font-mono text-xs">
-                <div className="flex items-center justify-between text-zinc-400">
-                  <span className="flex items-center gap-1.5 text-zinc-300 font-semibold">
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path fillRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clipRule="evenodd"></path></svg>
-                    Linked Pull Request: {samplePR.id} ({samplePR.commits.length} commits)
-                  </span>
-                  <span className="text-zinc-500">Branch: {samplePR.sourceBranch}</span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-mono text-zinc-400 uppercase mb-1">Jira Project Key</label>
+                  <input
+                    type="text"
+                    value={releaseProjectKey}
+                    onChange={(e) => setReleaseProjectKey(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 text-sm text-white px-3 py-2 rounded-lg font-mono focus:border-emerald-500 focus:outline-none"
+                  />
                 </div>
-
-                <div className="space-y-2 pt-2">
-                  {samplePR.commits.map((c, i) => (
-                    <div key={i} className="flex items-start gap-2 text-zinc-400 bg-zinc-900/80 p-2 rounded border border-zinc-800">
-                      <span className="text-emerald-400 font-bold">{c.hash.slice(0, 7)}</span>
-                      <span className="text-zinc-200">{c.message}</span>
-                    </div>
-                  ))}
+                <div>
+                  <label className="block text-xs font-mono text-zinc-400 uppercase mb-1">Target FixVersion / Release Name</label>
+                  <input
+                    type="text"
+                    value={releaseVersionName}
+                    onChange={(e) => setReleaseVersionName(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 text-sm text-white px-3 py-2 rounded-lg font-mono focus:border-emerald-500 focus:outline-none"
+                  />
                 </div>
               </div>
 
-              {/* Jira Activity Comments Stream */}
-              {postedToJira && (
-                <div className="border-t border-zinc-800 pt-4 space-y-3 animate-in fade-in duration-500">
-                  <div className="flex items-center gap-2 text-xs font-mono text-zinc-400">
-                    <span className="bg-emerald-950 text-emerald-400 border border-emerald-500/40 px-2 py-0.5 rounded font-bold">
-                      ShipIt AI Bot (Automated Change Summary)
-                    </span>
-                    <span>Just now</span>
-                  </div>
-                  <div className="bg-[#18181b] border border-zinc-700 rounded-lg p-4 font-mono text-xs whitespace-pre-wrap text-zinc-300">
-                    {analysis?.multiChannelFormats.jiraCommentMarkdown}
-                  </div>
-                </div>
-              )}
-
-            </div>
-          </div>
-
-          {/* Right Column (5 Cols): The Atlassian Forge ShipIt AI Panel */}
-          <div className="lg:col-span-5 space-y-6">
-            <div className="border border-emerald-900/60 bg-[#121215] rounded-xl overflow-hidden shadow-2xl">
-              
-              {/* Forge Panel Title Header */}
-              <div className="bg-gradient-to-r from-emerald-950/80 to-zinc-900 px-5 py-4 border-b border-emerald-900/40 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></div>
-                  <span className="font-bold text-sm text-white tracking-tight">
-                    ShipIt AI Change Intelligence
-                  </span>
-                </div>
-                <span className="font-mono text-[11px] text-zinc-400 bg-darkBg px-2 py-0.5 rounded border border-zinc-800">
-                  Jira Forge Panel
-                </span>
+              <div>
+                <label className="block text-xs font-mono text-zinc-400 uppercase mb-1">Sprint Context & Additional Change Notes</label>
+                <textarea
+                  rows={3}
+                  value={releaseCustomNotes}
+                  onChange={(e) => setReleaseCustomNotes(e.target.value)}
+                  className="w-full bg-zinc-900 border border-zinc-800 text-sm text-white px-3 py-2 rounded-lg focus:border-emerald-500 focus:outline-none"
+                />
               </div>
 
-              {!analysis && !analyzing && !error && (
-                <div className="p-8 text-center space-y-3">
-                  <div className="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800 mx-auto flex items-center justify-center text-zinc-500">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-                  </div>
-                  <p className="text-zinc-300 font-medium text-sm">No analysis run yet</p>
-                  <p className="text-zinc-500 text-xs">
-                    Click "Simulate GitHub PR Ingestion" to run the 4-Stage Deep Reasoning Pipeline.
-                  </p>
-                </div>
-              )}
+              <div className="flex justify-end">
+                <button
+                  onClick={handleGenerateReleaseHub}
+                  disabled={generatingReleaseHub}
+                  className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-sm px-6 py-2.5 rounded-lg transition-all shadow-[0_0_20px_rgba(37,99,235,0.2)] flex items-center gap-2"
+                >
+                  {generatingReleaseHub ? (
+                    <>
+                      <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"></div>
+                      <span>Synthesizing Release Pack...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Generate & Sync to Jira Release Hub</span>
+                      <span>→</span>
+                    </>
+                  )}
+                </button>
+              </div>
 
-              {error && (
-                <div className="p-6 text-center space-y-3 bg-red-950/20 border-t border-red-900/40 font-mono text-xs">
-                  <div className="text-red-400 font-bold flex items-center justify-center gap-1.5">
-                    <svg className="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    Pipeline Error
+              {releaseHubResult && (
+                <div className="mt-6 border-t border-zinc-800 pt-6 space-y-5">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-blue-950/20 border border-blue-900 p-4 rounded-xl">
+                    <div>
+                      <div className="text-xs font-mono text-blue-400 uppercase font-semibold">Jira Release Hub Sync Status</div>
+                      <div className="text-sm text-white font-medium mt-0.5">{releaseHubResult.jiraSync?.message}</div>
+                    </div>
+                    {releaseHubResult.jiraSync?.releaseNotesUrl && (
+                      <a
+                        href={releaseHubResult.jiraSync.releaseNotesUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="bg-blue-600 text-white font-semibold text-xs px-3.5 py-2 rounded-lg hover:bg-blue-500 transition-colors whitespace-nowrap self-start md:self-auto"
+                      >
+                        Open in Jira Release Hub ↗
+                      </a>
+                    )}
                   </div>
-                  <p className="text-zinc-300 text-xs leading-relaxed font-sans">{error}</p>
-                </div>
-              )}
 
-              {analyzing && (
-                <div className="p-8 text-center space-y-4 font-mono text-xs">
-                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-emerald-400"></div>
-                  <div className="text-zinc-400 space-y-1">
-                    <p className="text-emerald-400 font-bold">Analyzing AST Diffs & Commit Standards...</p>
-                    <p className="text-zinc-500">Sanitizing Secrets ➔ Scoring Health ➔ Synthesizing Views</p>
-                  </div>
-                </div>
-              )}
+                  <div className="space-y-4 bg-zinc-900/60 p-5 rounded-xl border border-zinc-800">
+                    <div>
+                      <span className="text-xs font-mono text-zinc-500 uppercase">Executive Milestone Summary</span>
+                      <p className="text-zinc-200 mt-1 text-sm leading-relaxed">{releaseHubResult.synthesis?.executiveSummary}</p>
+                    </div>
 
-              {analysis && (
-                <div className="p-5 space-y-5">
-                  
-                  {/* Quality & Risk Score Badges */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-darkBg border border-zinc-800 p-3 rounded-lg">
-                      <div className="text-[11px] font-mono text-zinc-500 uppercase">PR Quality Score</div>
-                      <div className="text-xl font-bold text-emerald-400 mt-1 flex items-center gap-1.5">
-                        {analysis.qualityScore.overallScore} / 100
-                        <span className="text-xs font-normal text-zinc-400">({analysis.qualityScore.clarityRating})</span>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                      <div>
+                        <span className="text-xs font-mono text-zinc-500 uppercase">Feature Highlights</span>
+                        <ul className="list-disc list-inside text-zinc-300 text-xs mt-1.5 space-y-1">
+                          {releaseHubResult.synthesis?.highlights?.map((h: string, i: number) => (
+                            <li key={i}>{h}</li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div>
+                        <span className="text-xs font-mono text-zinc-500 uppercase">Security & QA Verification</span>
+                        <p className="text-zinc-300 text-xs mt-1.5 leading-relaxed">{releaseHubResult.synthesis?.qaVerification}</p>
                       </div>
                     </div>
 
-                    <div className="bg-darkBg border border-zinc-800 p-3 rounded-lg">
-                      <div className="text-[11px] font-mono text-zinc-500 uppercase">Blast Radius Risk</div>
-                      <div className={`text-xl font-bold mt-1 ${analysis.riskAssessment.riskLevel === 'LOW' ? 'text-emerald-400' : 'text-amber-400'}`}>
-                        {analysis.riskAssessment.riskLevel}
+                    <div className="pt-2 border-t border-zinc-800">
+                      <span className="text-xs font-mono text-zinc-500 uppercase">Immutable Release Ledger Hash</span>
+                      <div className="bg-zinc-950 p-2.5 rounded font-mono text-xs text-emerald-400 select-all break-all mt-1 border border-zinc-800">
+                        {releaseHubResult.releaseHash}
                       </div>
                     </div>
                   </div>
-
-                  {/* Persona Selector Tabs */}
-                  <div className="flex border-b border-zinc-800 bg-darkBg/50 p-1 rounded-lg gap-1">
-                    {[
-                      { id: 'product', label: 'Product & CS' },
-                      { id: 'tech', label: 'Architecture' },
-                      { id: 'exec', label: 'Executive' },
-                      { id: 'compliance', label: 'SOC2 Audit' }
-                    ].map(tab => (
-                      <button
-                        key={tab.id}
-                        onClick={() => setActivePersona(tab.id as any)}
-                        className={`flex-1 py-1.5 text-xs font-medium rounded transition-colors ${activePersona === tab.id ? 'bg-zinc-800 text-emerald-400 font-bold shadow' : 'text-zinc-400 hover:text-white'}`}
-                      >
-                        {tab.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Persona Content Area */}
-                  <div className="bg-darkBg border border-zinc-800/80 rounded-lg p-4 space-y-3 text-xs leading-relaxed">
-                    {activePersona === 'product' && (
-                      <div className="space-y-2">
-                        <div className="font-bold text-zinc-200 text-sm">{analysis.synthesis.productSummary.headline}</div>
-                        <p className="text-zinc-400">{analysis.synthesis.productSummary.customerValueNarrative}</p>
-                        <div className="pt-2">
-                          <span className="text-zinc-500 font-mono text-[11px] uppercase">Key Customer Value:</span>
-                          <ul className="list-disc list-inside text-zinc-300 space-y-1 mt-1">
-                            {analysis.synthesis.productSummary.keyBenefits.map((b, i) => (
-                              <li key={i}>{b}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-                    )}
-
-                    {activePersona === 'tech' && (
-                      <div className="space-y-2">
-                        <div className="font-bold text-zinc-200">Architectural Note:</div>
-                        <p className="text-zinc-400">{analysis.synthesis.technicalSummary.architecturalImpact}</p>
-                        <div className="pt-2 font-mono text-[11px]">
-                          <span className="text-zinc-500 uppercase">Changed Components:</span>
-                          <div className="flex flex-wrap gap-1.5 mt-1">
-                            {analysis.synthesis.technicalSummary.changedComponents.map((c, i) => (
-                              <span key={i} className="bg-zinc-800 text-emerald-300 px-2 py-0.5 rounded border border-zinc-700">{c}</span>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {activePersona === 'exec' && (
-                      <div className="space-y-2">
-                        <div className="font-bold text-zinc-200">Executive Briefing:</div>
-                        <p className="text-zinc-300 italic">"{analysis.synthesis.executiveBrief.oneLiner}"</p>
-                        <div className="pt-2">
-                          <span className="text-zinc-500 font-mono text-[11px] uppercase">Business Objective:</span>
-                          <p className="text-emerald-400 font-medium mt-0.5">{analysis.synthesis.executiveBrief.businessObjective}</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {activePersona === 'compliance' && (
-                      <div className="space-y-2 font-mono text-[11px]">
-                        <div className="flex justify-between border-b border-zinc-800 pb-1">
-                          <span className="text-zinc-500">Change Type:</span>
-                          <span className="text-emerald-400 font-bold">{analysis.synthesis.complianceAuditLog.changeType}</span>
-                        </div>
-                        <div className="space-y-1 pt-1">
-                          <span className="text-zinc-500">Audit Justification:</span>
-                          <p className="text-zinc-300 font-sans text-xs">{analysis.synthesis.complianceAuditLog.justification}</p>
-                        </div>
-                        <div className="space-y-1 pt-2">
-                          <span className="text-zinc-500">Tamper-Proof SHA-256 Hash:</span>
-                          <div className="bg-zinc-950 p-1.5 rounded border border-zinc-800 text-[10px] text-zinc-400 break-all select-all">
-                            {analysis.synthesis.complianceAuditLog.tamperProofHash}
-                          </div>
-                        </div>
-                        <div className="pt-3">
-                          <button onClick={handleDownloadSOC2} className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold py-1.5 rounded border border-zinc-700 text-xs transition-colors">
-                            Download SOC2 Traceability Record (JSON)
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 1-Click Multi-Channel Enterprise Actions */}
-                  <div className="space-y-2 pt-2 border-t border-zinc-800">
-                    <span className="font-mono text-[11px] text-zinc-500 uppercase">1-Click Enterprise Broadcast</span>
-                    <div className="grid grid-cols-3 gap-2">
-                      <button
-                        onClick={() => setPostedToJira(true)}
-                        className={`py-2 px-3 rounded text-xs font-semibold border transition-all ${postedToJira ? 'bg-blue-900/40 text-blue-300 border-blue-700' : 'bg-zinc-900 border-zinc-800 hover:border-zinc-600 text-zinc-300'}`}
-                      >
-                        {postedToJira ? '✓ Posted to Jira' : 'Post to Jira'}
-                      </button>
-
-                      <button
-                        onClick={() => setPublishedToConfluence(true)}
-                        className={`py-2 px-3 rounded text-xs font-semibold border transition-all ${publishedToConfluence ? 'bg-purple-900/40 text-purple-300 border-purple-700' : 'bg-zinc-900 border-zinc-800 hover:border-zinc-600 text-zinc-300'}`}
-                      >
-                        {publishedToConfluence ? '✓ In Confluence' : 'To Confluence'}
-                      </button>
-
-                      <button
-                        onClick={handleSlackDispatch}
-                        className={`py-2 px-3 rounded text-xs font-semibold border transition-all ${broadcastedToSlack ? 'bg-emerald-900/40 text-emerald-300 border-emerald-700' : 'bg-zinc-900 border-zinc-800 hover:border-zinc-600 text-zinc-300'}`}
-                      >
-                        {broadcastedToSlack ? '✓ In #slack' : 'Push to Slack'}
-                      </button>
-                    </div>
-                  </div>
-
                 </div>
               )}
-
             </div>
           </div>
+        )}
 
-        </div>
+        {/* ======================================================== */}
+        {/* VIEW 3: CRYPTOGRAPHIC AUDIT LEDGER & HASH VERIFIER */}
+        {/* ======================================================== */}
+        {activeView === 'audit-ledger' && (
+          <div className="space-y-6">
+            
+            {/* Hash Verification Tool */}
+            <div className="border border-zinc-800 bg-[#121215] rounded-xl p-6 shadow-xl space-y-4">
+              <div className="flex items-center gap-2">
+                <span className="text-emerald-400 text-lg">🛡️</span>
+                <h3 className="text-lg font-bold text-white">Cryptographic Tamper-Proof Audit Verifier</h3>
+              </div>
+              <p className="text-xs text-zinc-400">
+                Enter any SHA-256 tamper-proof audit hash to independently verify its authenticity against the immutable ledger (Supabase/Persistent storage).
+              </p>
+
+              <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                <input
+                  type="text"
+                  placeholder="Paste SHA-256 Hash (e.g. 5a1b3c...)"
+                  value={verifyHashInput}
+                  onChange={(e) => setVerifyHashInput(e.target.value)}
+                  className="bg-zinc-900 border border-zinc-800 text-xs text-zinc-200 px-3.5 py-2.5 rounded-lg flex-1 font-mono focus:border-emerald-500 focus:outline-none"
+                />
+                <button
+                  onClick={() => handleVerifyHash()}
+                  disabled={!verifyHashInput.trim() || verifyingHash}
+                  className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold text-xs px-5 py-2.5 rounded-lg transition-colors whitespace-nowrap"
+                >
+                  {verifyingHash ? 'Verifying...' : 'Verify Cryptographic Hash'}
+                </button>
+              </div>
+
+              {verificationResult && (
+                <div className={`p-4 rounded-xl text-xs font-mono border mt-3 ${verificationResult.verified ? 'bg-emerald-950/30 border-emerald-800 text-emerald-300' : 'bg-red-950/30 border-red-800 text-red-300'}`}>
+                  <div className="font-bold text-sm mb-1">
+                    {verificationResult.verified ? '✅ Cryptographic Verification PASSED' : '❌ Verification FAILED'}
+                  </div>
+                  <p>{verificationResult.message}</p>
+                  {verificationResult.verifiedRecord && (
+                    <div className="mt-3 pt-3 border-t border-emerald-900/60 space-y-1 text-zinc-300">
+                      <div><strong>PR / Release:</strong> {verificationResult.verifiedRecord.pullRequestInfo?.title} ({verificationResult.verifiedRecord.pullRequestInfo?.id})</div>
+                      <div><strong>Author:</strong> {verificationResult.verifiedRecord.pullRequestInfo?.author}</div>
+                      <div><strong>Risk Level:</strong> {verificationResult.verifiedRecord.riskMetrics?.riskLevel} | <strong>Score:</strong> {verificationResult.verifiedRecord.riskMetrics?.qualityScore}/100</div>
+                      <div><strong>Audit Justification:</strong> {verificationResult.verifiedRecord.auditJustification}</div>
+                      <div><strong>Timestamp:</strong> {verificationResult.verifiedRecord.timestamp}</div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Audit Records Table */}
+            <div className="border border-zinc-800 bg-[#121215] rounded-xl p-6 shadow-xl space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-white">Immutable Ledger History</h3>
+                  <p className="text-xs text-zinc-400 mt-0.5">Recent pull request change management records</p>
+                </div>
+                <button
+                  onClick={fetchRecentAudits}
+                  className="text-xs font-mono text-zinc-400 hover:text-white bg-zinc-900 px-3 py-1.5 rounded border border-zinc-800"
+                >
+                  Refresh
+                </button>
+              </div>
+
+              {recentAudits.length === 0 ? (
+                <div className="text-center py-10 text-zinc-500 text-xs font-mono">
+                  No audit records logged yet. Run a PR analysis or receive a GitHub webhook to record the first ledger entry.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs font-mono">
+                    <thead className="text-zinc-500 border-b border-zinc-800">
+                      <tr>
+                        <th className="py-2.5 px-3">PR / Entity</th>
+                        <th className="py-2.5 px-3">Author</th>
+                        <th className="py-2.5 px-3">Risk</th>
+                        <th className="py-2.5 px-3">Quality</th>
+                        <th className="py-2.5 px-3">Tamper-Proof Hash</th>
+                        <th className="py-2.5 px-3">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-800/60">
+                      {recentAudits.map((item) => (
+                        <tr key={item.tamper_proof_hash} className="hover:bg-zinc-900/40">
+                          <td className="py-3 px-3 text-white font-medium font-sans">
+                            {item.pr_title}
+                            <span className="block text-[11px] text-zinc-500 font-mono">{item.pr_id}</span>
+                          </td>
+                          <td className="py-3 px-3 text-zinc-400">{item.author}</td>
+                          <td className="py-3 px-3">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${item.risk_level === 'CRITICAL' || item.risk_level === 'HIGH' ? 'bg-red-950 text-red-400' : 'bg-emerald-950 text-emerald-400'}`}>
+                              {item.risk_level}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-zinc-300">{item.quality_score}/100</td>
+                          <td className="py-3 px-3 text-zinc-400 font-mono text-[11px]">
+                            {item.tamper_proof_hash.slice(0, 14)}...
+                          </td>
+                          <td className="py-3 px-3">
+                            <button
+                              onClick={() => {
+                                setVerifyHashInput(item.tamper_proof_hash);
+                                handleVerifyHash(item.tamper_proof_hash);
+                              }}
+                              className="text-emerald-400 hover:text-emerald-300 font-semibold underline"
+                            >
+                              Verify
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+          </div>
+        )}
 
       </div>
     </div>

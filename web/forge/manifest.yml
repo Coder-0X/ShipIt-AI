@@ -18,6 +18,13 @@ modules:
       resolver:
         function: resolver-fn
 
+  jira:projectPage:
+    - key: shipit-ai-release-hub
+      title: ShipIt AI Release Hub
+      resource: release-hub-ui
+      resolver:
+        function: resolver-fn
+
   function:
     - key: resolver-fn
       handler: index.handler
@@ -27,11 +34,14 @@ resources:
     path: static/issue-panel/build
   - key: settings-custom-ui
     path: static/settings/build
+  - key: release-hub-ui
+    path: static/release-hub/build
 
 permissions:
   scopes:
     - read:jira-work
     - write:jira-work
+    - read:jira-user
     - read:confluence-content
     - write:confluence-content
     - storage:app
