@@ -1,4 +1,4 @@
-﻿# 🚀 ShipIt AI
+# 🚀 ShipIt AI
 
 > **Multi-Surface Developer Intelligence & Automated Release Orchestration Platform**  
 > *Transforming raw code diffs and commit histories into stakeholder-ready changelogs, executive briefs, and release notes across Web, Chrome MV3, and Google Workspace.*
@@ -117,7 +117,11 @@ ShipIt-AI/
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Getting Started (Model A: Self-Hosted / Team Deployment)
+
+ShipIt AI is built for **self-hosted and private team deployments**. You maintain full sovereignty over your secrets and data with zero multi-tenant leakage.
+
+For a full step-by-step setup guide covering GitHub Webhooks, Jira Release Hubs, Slack Block-Kit, and Supabase, see the **[Self-Hosting Guide](docs/self_hosting_guide.md)**.
 
 ### Prerequisites
 - **Node.js**: v18.0.0 or higher
@@ -134,27 +138,39 @@ cd ShipIt-AI/web
 # Install dependencies
 npm install
 
-# Configure environment variables
+# Configure your private environment variables
 cp .env.example .env.local
-# Open .env.local and add your GEMINI_API_KEY
+# Add your GEMINI_API_KEY (and optional Jira, Slack, or Supabase credentials)
 
-# Run test suite
+# Run the environment diagnostic doctor
+npm run doctor
+
+# Run automated test suite
 npm test
 
 # Start development server
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to access the web console.
+Open [http://localhost:3000](http://localhost:3000) for the main console or [http://localhost:3000/enterprise](http://localhost:3000/enterprise) for the Enterprise Jira & Release Hub studio.
 
-### 2. Loading the Chrome MV3 Extension
+### 2. Docker & Compose Deployment
+
+Deploy with a single command:
+
+```bash
+cd ShipIt-AI/web
+docker compose up -d --build
+```
+
+### 3. Loading the Chrome MV3 Extension
 
 1. Open Google Chrome and navigate to `chrome://extensions/`.
 2. Enable **Developer mode** (toggle in top-right corner).
 3. Click **Load unpacked** and select the `ShipIt-AI/extension` folder.
 4. Pin the ShipIt AI extension and open the side panel to start generating releases.
 
-### 3. Deploying the Google Workspace Add-on
+### 4. Deploying the Google Workspace Add-on
 
 1. Navigate to [Google Apps Script](https://script.google.com/).
 2. Create a new project.
@@ -165,7 +181,7 @@ Open [http://localhost:3000](http://localhost:3000) to access the web console.
 
 ## 🧪 Testing & Quality Assurance
 
-ShipIt AI maintains automated testing for the AST processing and sanitization engine:
+ShipIt AI maintains automated testing for the AST processing, sanitization engine, and multi-surface integrations:
 
 ```bash
 cd web
@@ -175,13 +191,12 @@ npm test
 Expected output:
 ```text
 PASS src/engine/__tests__/ast.test.ts
-  AST Chunker & Filter
-    ✓ should filter out lockfiles (package-lock.json)
-    ✓ should handle empty diffs gracefully
+PASS src/engine/__tests__/integrations.test.ts
 
-Test Suites: 1 passed, 1 total
-Tests:       2 passed, 2 total
+Test Suites: 2 passed, 2 total
+Tests:       8 passed, 8 total
 ```
+
 
 ---
 
