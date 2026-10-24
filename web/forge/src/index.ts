@@ -33,7 +33,6 @@ resolver.define('triggerAnalysis', async (req) => {
   const issueRes = await api.asApp().requestJira(route`/rest/api/3/issue/${issueKey}`);
   const issueData = await issueRes.json();
 
-  // In production Forge environment, call our secured backend or run in-function
   const analysisPayload = {
     id: issueKey,
     title: issueData.fields.summary,
@@ -82,6 +81,38 @@ resolver.define('postJiraComment', async (req) => {
   });
 
   return { success: res.status === 201 };
+});
+
+// Resolver for Jira Release Hub: list project versions
+resolver.define('getProjectVersions', async (req) => {
+  const { projectKey } = req.payload;
+  const res = await api.asApp().requestJira(route`/rest/api/3/project/${projectKey}/versions`);
+  if (!res.ok) {
+    return { versions: [] };
+  }
+  const versions = await res.json();
+  return { versions };
+});
+
+// Resolver for Jira Release Hub: sync version release notes
+resolver.define('syncReleaseHubVersion', async (req) => {
+  const { versionId, versionName, description } = req.payload;
+
+  const res = await api.asApp().requestJira(route`/rest/api/3/version/${versionId}`, {
+    method: 'PUT',
+    headers: {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      name: versionName,
+      description: description.slice(0, 1000),
+      released: true,
+      releaseDate: new Date().toISOString().slice(0, 10)
+    })
+  });
+
+  return { success: res.ok };
 });
 
 export const handler = resolver.getDefinitions();
