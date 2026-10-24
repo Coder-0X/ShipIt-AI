@@ -1,36 +1,64 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🌐 ShipIt AI — Web Application & Ingestion Gateway
 
-## Getting Started
+> Full-stack Next.js 16 application providing the Enterprise Dashboard, GitHub Webhook Ingestion Gateway, Atlassian Jira Release Hub integration, Slack Block-Kit broadcaster, and Supabase Audit Ledger.
 
-First, run the development server:
+---
+
+## ⚡ Quickstart (Self-Hosted)
+
+### 1. Prerequisites
+- **Node.js**: v18.0.0 or higher
+- **npm** (or pnpm / yarn)
+- **Google Gemini API Key**: [Get a free key here](https://aistudio.google.com/)
+
+### 2. Setup & Installation
 
 ```bash
+# Install dependencies
+npm install
+
+# Create private configuration
+cp .env.example .env.local
+
+# Run configuration doctor
+npm run doctor
+
+# Start local development server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) for the main console or [http://localhost:3000/enterprise](http://localhost:3000/enterprise) for the Enterprise Jira & Release Hub studio.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 🩺 Diagnostic Tools
 
-## Learn More
+* **CLI Diagnostic Doctor:**
+  ```bash
+  npm run doctor
+  ```
+* **API Health & Integrations Check:**
+  ```bash
+  curl http://localhost:3000/api/health
+  ```
+* **Run Automated Tests:**
+  ```bash
+  npm test
+  ```
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 🐳 Docker Deployment
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Build and run in production mode with Docker Compose:
 
-## Deploy on Vercel
+```bash
+# Ensure .env.local has your GEMINI_API_KEY
+docker compose up -d --build
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 📖 Complete Documentation
+
+For step-by-step instructions on setting up live GitHub webhooks, Jira Cloud credentials, Slack webhooks, and Supabase PostgreSQL tables, see the [Self-Hosting Guide](../docs/self_hosting_guide.md).

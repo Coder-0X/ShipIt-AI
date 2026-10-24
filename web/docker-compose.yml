@@ -9,10 +9,30 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
+      # Core AI Engine
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # GitHub Integration
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      # Jira Cloud & Release Hubs
+      - JIRA_HOST=${JIRA_HOST}
+      - JIRA_EMAIL=${JIRA_EMAIL}
+      - JIRA_API_TOKEN=${JIRA_API_TOKEN}
+      - DEFAULT_JIRA_PROJECT=${DEFAULT_JIRA_PROJECT:-PROJ}
+      # Slack Broadcast
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      # Supabase Audit Ledger
       - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
       - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - DEFAULT_ORG_ID=${DEFAULT_ORG_ID:-00000000-0000-0000-0000-000000000000}
+      # Optional Billing
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
