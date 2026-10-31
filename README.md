@@ -216,6 +216,5 @@ Distributed under the **MIT License**. See `LICENSE` for more information.
 
 ## 👨‍💻 Author
 
-**Asim Paudel**  
-- GitHub: [@Coder-0X](https://github.com/Coder-0X)  
-- Email: [asimpaudel48@gmail.com](mailto:asimpaudel48@gmail.com)
+**Coder-0X**
+- GitHub: [@Coder-0X](https://github.com/Coder-0X)
